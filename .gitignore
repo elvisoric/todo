@@ -1,0 +1,6 @@
+# Binary
+todo
+*.exe
+
+# OS
+.DS_Store
