@@ -10,12 +10,22 @@ Organize your todos into dot-separated spaces like `office.monday.morning` and b
 go install github.com/elvisoric/todo@latest
 ```
 
+Make sure `$GOPATH/bin` is in your `PATH`. Add this to your `~/.zshrc` (or `~/.bashrc`):
+
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+Then restart your shell or run `source ~/.zshrc`.
+
 Or build from source:
 
 ```bash
 git clone https://github.com/elvisoric/todo.git
 cd todo
 go build -o todo .
+# Move the binary somewhere in your PATH, e.g.:
+mv todo /usr/local/bin/
 ```
 
 ## Usage
