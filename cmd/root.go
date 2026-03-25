@@ -36,6 +36,7 @@ func init() {
 	rootCmd.AddCommand(listDoneCmd)
 	rootCmd.AddCommand(spacesCmd)
 	rootCmd.AddCommand(completionCmd)
+	rootCmd.AddCommand(versionCmd)
 }
 
 // Default action: list active todos + space tree
