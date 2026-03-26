@@ -125,6 +125,37 @@ func (s *Store) MarkDone(ids []string) (done []string, notFound []string) {
 	return
 }
 
+// RenameSpace renames oldName to newName, including all children.
+// Returns the number of todos updated.
+func (s *Store) RenameSpace(oldName, newName string) int {
+	count := 0
+	for i := range s.Todos {
+		ns := s.Todos[i].Namespace
+		if ns == oldName {
+			s.Todos[i].Namespace = newName
+			count++
+		} else if strings.HasPrefix(ns, oldName+".") {
+			s.Todos[i].Namespace = newName + ns[len(oldName):]
+			count++
+		}
+	}
+	return count
+}
+
+// MoveTodos moves todos by ID to a new space.
+func (s *Store) MoveTodos(ids []string, newSpace string) (moved []string, notFound []string) {
+	for _, id := range ids {
+		t := s.FindByID(id)
+		if t == nil {
+			notFound = append(notFound, id)
+			continue
+		}
+		t.Namespace = newSpace
+		moved = append(moved, id)
+	}
+	return
+}
+
 func (s *Store) Delete(ids []string) (deleted []string, notFound []string) {
 	toDelete := make(map[string]bool)
 	for _, id := range ids {

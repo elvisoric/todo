@@ -14,7 +14,17 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "todo [space]",
 	Short: "A terminal todo app with spaces",
-	Long:  "Manage todos organized by topics (spaces) with nested hierarchy.\n\nRun 'todo' to see default todos and all spaces.\nRun 'todo <space>' to see todos in that space (e.g. todo office).",
+	Long: `Manage todos organized by topics (spaces) with nested hierarchy.
+
+Run 'todo' to see default todos and all spaces.
+Run 'todo <space>' to see todos in that space (e.g. todo office).
+
+Shell Completion:
+  Bash:  source <(todo completion bash)
+  Zsh:   source <(todo completion zsh)
+  Fish:  todo completion fish | source
+
+  To make it permanent, add the command to your shell profile (~/.bashrc, ~/.zshrc, etc.).`,
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runList,
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -35,6 +45,8 @@ func init() {
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(listDoneCmd)
 	rootCmd.AddCommand(spacesCmd)
+	rootCmd.AddCommand(renameCmd)
+	rootCmd.AddCommand(moveCmd)
 	rootCmd.AddCommand(completionCmd)
 	rootCmd.AddCommand(versionCmd)
 }
@@ -227,6 +239,74 @@ var deleteCmd = &cobra.Command{
 		for _, id := range notFound {
 			fmt.Fprintf(os.Stderr, "%s Todo %s not found.\n", c(boldRed, "✗"), c(yellow, "["+id+"]"))
 		}
+		return nil
+	},
+}
+
+// --- move ---
+var moveSpace string
+
+var moveCmd = &cobra.Command{
+	Use:   "move [id...] -s [space]",
+	Short: "Move todos to a different space",
+	Args:  cobra.MinimumNArgs(1),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return completeTodoIDs(toComplete, false)
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if moveSpace == "" {
+			return fmt.Errorf("target space required: use -s <space>")
+		}
+		s, err := store.Load()
+		if err != nil {
+			return err
+		}
+		moved, notFound := s.MoveTodos(args, moveSpace)
+		if err := s.Save(); err != nil {
+			return err
+		}
+		for _, id := range moved {
+			fmt.Printf("%s %s moved to %s.\n", c(boldGreen, "→"), c(yellow, "["+id+"]"), c(cyan, moveSpace))
+		}
+		for _, id := range notFound {
+			fmt.Fprintf(os.Stderr, "%s Todo %s not found.\n", c(boldRed, "✗"), c(yellow, "["+id+"]"))
+		}
+		return nil
+	},
+}
+
+func init() {
+	moveCmd.Flags().StringVarP(&moveSpace, "space", "s", "", "Target space to move todos to")
+	moveCmd.MarkFlagRequired("space")
+}
+
+// --- rename ---
+var renameCmd = &cobra.Command{
+	Use:   "rename [old-space] [new-space]",
+	Short: "Rename a space",
+	Long:  "Rename a space and all its children. E.g. 'todo rename office work' renames office.* to work.*",
+	Args:  cobra.ExactArgs(2),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) >= 2 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeSpaceNames(toComplete)
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		oldName, newName := args[0], args[1]
+		s, err := store.Load()
+		if err != nil {
+			return err
+		}
+		count := s.RenameSpace(oldName, newName)
+		if count == 0 {
+			fmt.Fprintf(os.Stderr, "%s No todos found in space %s.\n", c(boldRed, "✗"), c(cyan, oldName))
+			return nil
+		}
+		if err := s.Save(); err != nil {
+			return err
+		}
+		fmt.Printf("%s Renamed %s to %s (%d todos updated).\n", c(boldGreen, "✓"), c(cyan, oldName), c(cyan, newName), count)
 		return nil
 	},
 }
