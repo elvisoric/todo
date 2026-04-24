@@ -88,6 +88,7 @@ func init() {
 	rootCmd.AddCommand(doneCmd)
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(dueCmd)
+	rootCmd.AddCommand(editCmd)
 	rootCmd.AddCommand(listDoneCmd)
 	rootCmd.AddCommand(overdueCmd)
 	rootCmd.AddCommand(spacesCmd)

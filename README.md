@@ -142,6 +142,17 @@ todo alarm -f plain | while read -r l; do notify-send "todo" "$l"; done
 */5 * * * * todo alarm -f plain -w 30m
 ```
 
+### Edit a todo
+
+Replace the text of an existing todo. With text on the command line it's a
+direct replacement; with no text, `$EDITOR` (falls back to `$VISUAL`, then
+`nano`/`vim`/`vi`) opens pre-filled with the current text.
+
+```bash
+todo edit a1b2 "new text for this todo"
+todo edit a1b2
+```
+
 ### Mark as done
 
 ```bash
