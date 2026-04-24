@@ -57,7 +57,7 @@ Due dates:
   todo overdue              # items whose due date has passed
   todo alarm                # items due within a configured window (or overdue)
 
-Configuration (YAML at $HOME/.config/todo/.todo, or $TODO_PATH):
+Configuration (YAML at $HOME/.todo/config.yaml, or $TODO_PATH):
   general:
     line_width: 120
     alarm_window: 1h

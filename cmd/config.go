@@ -43,7 +43,7 @@ func configPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "todo", ".todo")
+	return filepath.Join(home, ".todo", "config.yaml")
 }
 
 func getConfig() *Config {

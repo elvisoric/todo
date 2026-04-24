@@ -191,8 +191,8 @@ with `done`, `delete`, `move`, and `due` commands.
 ## Configuration
 
 Optional YAML config. `todo` looks for it at `$TODO_PATH` if set, otherwise
-`$HOME/.config/todo/.todo`. If the file is missing or malformed, built-in
-defaults apply.
+`$HOME/.todo/config.yaml` (same directory as your todos). If the file is
+missing or malformed, built-in defaults apply.
 
 ```yaml
 general:
@@ -206,7 +206,8 @@ align under the text column so the table stays readable.
 ## Storage
 
 Todos are stored as JSON in `~/.todo/todos.json`. No database required. The
-optional config file lives separately (see [Configuration](#configuration)).
+optional config file lives in the same directory
+(see [Configuration](#configuration)).
 
 ## Shell Completion
 
