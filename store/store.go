@@ -15,12 +15,13 @@ import (
 const defaultNamespace = "default"
 
 type Todo struct {
-	ID        string    `json:"id"`
-	Text      string    `json:"text"`
-	Namespace string    `json:"namespace"`
-	Done      bool      `json:"done"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string     `json:"id"`
+	Text      string     `json:"text"`
+	Namespace string     `json:"namespace"`
+	Done      bool       `json:"done"`
+	CreatedAt time.Time  `json:"created_at"`
 	DoneAt    *time.Time `json:"done_at,omitempty"`
+	DueAt     *time.Time `json:"due_at,omitempty"`
 }
 
 type Store struct {
@@ -86,7 +87,7 @@ func (s *Store) existingIDs() map[string]bool {
 	return m
 }
 
-func (s *Store) Add(text, namespace string) Todo {
+func (s *Store) Add(text, namespace string, due *time.Time) Todo {
 	if namespace == "" {
 		namespace = defaultNamespace
 	}
@@ -95,6 +96,7 @@ func (s *Store) Add(text, namespace string) Todo {
 		Text:      text,
 		Namespace: namespace,
 		CreatedAt: time.Now(),
+		DueAt:     due,
 	}
 	s.Todos = append(s.Todos, t)
 	return t
