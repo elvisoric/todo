@@ -3,13 +3,43 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/elvisoric/todo/store"
 	"github.com/spf13/cobra"
 )
+
+var sortBy string
+
+func init() {
+	rootCmd.Flags().StringVarP(&sortBy, "sort", "o", "", "Sort order: due (by due date; no-due items last by creation)")
+}
+
+func sortTodos(todos []store.Todo, by string) error {
+	switch by {
+	case "":
+		return nil
+	case "due":
+		sort.SliceStable(todos, func(i, j int) bool {
+			a, b := todos[i], todos[j]
+			switch {
+			case a.DueAt != nil && b.DueAt != nil:
+				return a.DueAt.Before(*b.DueAt)
+			case a.DueAt != nil:
+				return true
+			case b.DueAt != nil:
+				return false
+			default:
+				return a.CreatedAt.Before(b.CreatedAt)
+			}
+		})
+		return nil
+	default:
+		return fmt.Errorf("unknown sort order %q (supported: due)", by)
+	}
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "todo [space]",
@@ -18,6 +48,19 @@ var rootCmd = &cobra.Command{
 
 Run 'todo' to see default todos and all spaces.
 Run 'todo <space>' to see todos in that space (e.g. todo office).
+Add '--sort=due' to any listing to order by due date (items without a due
+date fall to the bottom, sorted by creation time).
+
+Due dates:
+  todo add "finish report" -d "tomorrow 2pm"
+  todo due <id> "next monday"
+  todo overdue              # items whose due date has passed
+  todo alarm                # items due within a configured window (or overdue)
+
+Configuration (YAML at $HOME/.todo/config.yaml, or $TODO_PATH):
+  general:
+    line_width: 120
+    alarm_window: 1h
 
 Shell Completion:
   Bash:  source <(todo completion bash)
@@ -41,9 +84,12 @@ func Execute() error {
 
 func init() {
 	rootCmd.AddCommand(addCmd)
+	rootCmd.AddCommand(alarmCmd)
 	rootCmd.AddCommand(doneCmd)
 	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(dueCmd)
 	rootCmd.AddCommand(listDoneCmd)
+	rootCmd.AddCommand(overdueCmd)
 	rootCmd.AddCommand(spacesCmd)
 	rootCmd.AddCommand(renameCmd)
 	rootCmd.AddCommand(moveCmd)
@@ -66,6 +112,9 @@ func runList(cmd *cobra.Command, args []string) error {
 			fmt.Printf("No todos in space %q.\n", space)
 			return nil
 		}
+		if err := sortTodos(todos, sortBy); err != nil {
+			return err
+		}
 		fmt.Printf("Todos in %s:\n", c(boldCyan, space))
 		printTodos(todos)
 		return nil
@@ -82,11 +131,10 @@ func runList(cmd *cobra.Command, args []string) error {
 	if len(defaultTodos) == 0 {
 		fmt.Println(c(dim, "No todos in default space."))
 	} else {
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		for _, t := range defaultTodos {
-			fmt.Fprintf(w, "  %s\t%s\t%s\n", c(yellow, "["+t.ID+"]"), t.Text, c(dim, fmtTime(t.CreatedAt)))
+		if err := sortTodos(defaultTodos, sortBy); err != nil {
+			return err
 		}
-		w.Flush()
+		renderList(todoRows(defaultTodos, false), getConfig().General.LineWidth)
 	}
 
 	// Show other spaces with counts
@@ -124,39 +172,40 @@ func printTree(n *store.NamespaceNode, indent string) {
 	}
 }
 
-func printTodosByNamespace(s *store.Store, ns, label string) {
-	var todos []store.Todo
-	for _, t := range s.ActiveTodos() {
-		if t.Namespace == ns {
-			todos = append(todos, t)
-		}
-	}
-	if len(todos) == 0 {
-		return
-	}
-	fmt.Printf("%s %s %s\n", c(dim, "──"), c(boldCyan, label), c(dim, "──"))
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	for _, t := range todos {
-		fmt.Fprintf(w, "  %s\t%s\t%s\n", c(yellow, "["+t.ID+"]"), t.Text, c(dim, fmtTime(t.CreatedAt)))
-	}
-	w.Flush()
-	fmt.Println()
-}
-
 func printTodos(todos []store.Todo) {
 	if len(todos) == 0 {
 		return
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	renderList(todoRows(todos, true), getConfig().General.LineWidth)
+}
+
+func todoRows(todos []store.Todo, showNS bool) []listRow {
+	now := time.Now()
+	rows := make([]listRow, 0, len(todos))
 	for _, t := range todos {
-		ts := c(dim, fmtTime(t.CreatedAt))
-		doneTS := ""
-		if t.DoneAt != nil {
-			doneTS = c(green, " (done "+fmtTime(*t.DoneAt)+")")
+		r := listRow{
+			ID:      c(yellow, "["+t.ID+"]"),
+			Text:    t.Text,
+			Due:     dueCell(t, now),
+			Created: c(dim, fmtTime(t.CreatedAt)),
 		}
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s%s\n", c(yellow, "["+t.ID+"]"), c(magenta, t.Namespace), t.Text, ts, doneTS)
+		if showNS {
+			r.NS = c(magenta, t.Namespace)
+		}
+		if t.DoneAt != nil {
+			r.Done = c(green, "(done "+fmtTime(*t.DoneAt)+")")
+		}
+		rows = append(rows, r)
 	}
-	w.Flush()
+	return rows
+}
+
+func dueCell(t store.Todo, now time.Time) string {
+	if t.DueAt == nil {
+		return ""
+	}
+	label, color := formatDue(*t.DueAt, now)
+	return c(color, label)
 }
 
 func fmtTime(t time.Time) string {
@@ -164,29 +213,55 @@ func fmtTime(t time.Time) string {
 }
 
 // --- add ---
-var addNamespace string
+var (
+	addNamespace string
+	addDue       string
+)
 
 var addCmd = &cobra.Command{
 	Use:   "add [text]",
 	Short: "Add a new todo",
-	Args:  cobra.MinimumNArgs(1),
+	Long: `Add a new todo. Use -d to set a due date.
+
+Due-date examples:
+  todo add "call mom" -d "tomorrow 2pm"
+  todo add "finish report" -d "today 16:00"
+  todo add "write letter" -d "next monday"
+  todo add "ship feature" -d "2026-04-30 14:00"
+  todo add "drink water" -d "in 2h"
+  todo add "weekly sync" -d friday`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		text := strings.Join(args, " ")
+		var due *time.Time
+		if addDue != "" {
+			t, err := ParseDue(addDue)
+			if err != nil {
+				return err
+			}
+			due = &t
+		}
 		s, err := store.Load()
 		if err != nil {
 			return err
 		}
-		t := s.Add(text, addNamespace)
+		t := s.Add(text, addNamespace, due)
 		if err := s.Save(); err != nil {
 			return err
 		}
-		fmt.Printf("%s %s to %s: %s\n", c(boldGreen, "+"), c(yellow, "["+t.ID+"]"), c(cyan, t.Namespace), t.Text)
+		msg := fmt.Sprintf("%s %s to %s: %s", c(boldGreen, "+"), c(yellow, "["+t.ID+"]"), c(cyan, t.Namespace), t.Text)
+		if due != nil {
+			label, color := formatDue(*due, time.Now())
+			msg += " " + c(color, "("+label+")")
+		}
+		fmt.Println(msg)
 		return nil
 	},
 }
 
 func init() {
 	addCmd.Flags().StringVarP(&addNamespace, "space", "s", "", "Topic/space (dot-separated, e.g. office.monday)")
+	addCmd.Flags().StringVarP(&addDue, "due", "d", "", "Due date (e.g. \"tomorrow 2pm\", \"2026-04-30\", \"next monday\", \"in 3h\")")
 }
 
 // --- done ---
@@ -330,6 +405,117 @@ var spacesCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// --- due ---
+var dueClear bool
+
+var dueCmd = &cobra.Command{
+	Use:   "due [id] [date...]",
+	Short: "Set or clear the due date of a todo",
+	Long: `Set the due date of an existing todo.
+
+Examples:
+  todo due abcd "next friday"
+  todo due abcd tomorrow 2pm
+  todo due abcd 2026-04-30 14:00
+  todo due abcd --clear`,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if dueClear {
+			if len(args) != 1 {
+				return fmt.Errorf("--clear requires exactly one id")
+			}
+			return nil
+		}
+		if len(args) < 2 {
+			return fmt.Errorf("expected <id> and a date (or use --clear)")
+		}
+		return nil
+	},
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completeTodoIDs(toComplete, false)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id := args[0]
+		s, err := store.Load()
+		if err != nil {
+			return err
+		}
+		t := s.FindByID(id)
+		if t == nil {
+			return fmt.Errorf("todo %s not found", id)
+		}
+		if dueClear {
+			t.DueAt = nil
+			if err := s.Save(); err != nil {
+				return err
+			}
+			fmt.Printf("%s %s due date cleared.\n", c(boldGreen, "✓"), c(yellow, "["+t.ID+"]"))
+			return nil
+		}
+		expr := strings.Join(args[1:], " ")
+		when, err := ParseDue(expr)
+		if err != nil {
+			return err
+		}
+		t.DueAt = &when
+		if err := s.Save(); err != nil {
+			return err
+		}
+		label, color := formatDue(when, time.Now())
+		fmt.Printf("%s %s %s\n", c(boldGreen, "✓"), c(yellow, "["+t.ID+"]"), c(color, label))
+		return nil
+	},
+}
+
+func init() {
+	dueCmd.Flags().BoolVar(&dueClear, "clear", false, "Clear the due date instead of setting it")
+}
+
+// --- overdue ---
+var overdueAll bool
+
+var overdueCmd = &cobra.Command{
+	Use:   "overdue",
+	Short: "List todos whose due date has passed",
+	Long:  "List active todos whose due date has passed. Defaults to the default space; use --all for every space.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		s, err := store.Load()
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		var overdue []store.Todo
+		for _, t := range s.ActiveTodos() {
+			if t.DueAt == nil || !t.DueAt.Before(now) {
+				continue
+			}
+			if !overdueAll && t.Namespace != "default" {
+				continue
+			}
+			overdue = append(overdue, t)
+		}
+		if len(overdue) == 0 {
+			fmt.Println(c(dim, "No overdue todos."))
+			return nil
+		}
+		sort.SliceStable(overdue, func(i, j int) bool {
+			return overdue[i].DueAt.Before(*overdue[j].DueAt)
+		})
+		if overdueAll {
+			printTodos(overdue)
+			return nil
+		}
+		renderList(todoRows(overdue, false), getConfig().General.LineWidth)
+		return nil
+	},
+}
+
+func init() {
+	overdueCmd.Flags().BoolVar(&overdueAll, "all", false, "Include overdue todos from every space, not just default")
 }
 
 // --- list-done ---
